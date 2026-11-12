@@ -67,8 +67,23 @@ def md(text):
 
 
 def sql(name, text):
+    # Workspace notebooks expose a SQL cell's result to Python only under its `%%sql -r <name>` name
+    # (otherwise as dataframe_N); in Snowsight this is the cell's "SQL as <name>" label.
     return {"cell_type": "code", "id": _id(), "execution_count": None, "outputs": [],
-            "metadata": {"language": "sql", "name": name}, "source": text.strip("\n")}
+            "metadata": {"language": "sql", "name": name}, "source": f"%%sql -r {name}\n" + text.strip("\n")}
+
+
+def split_statements(text):
+    """Split a course code block into statements, text unchanged; comment lines stay with the statement after them."""
+    parts, cur = [], []
+    for line in text.split("\n"):
+        cur.append(line)
+        if line.rstrip().endswith(";") and not line.lstrip().startswith(("//", "--")):
+            parts.append("\n".join(cur).strip("\n"))
+            cur = []
+    if "\n".join(cur).strip():
+        parts.append("\n".join(cur).strip("\n"))
+    return parts
 
 
 def py(name, text):
@@ -97,7 +112,7 @@ def page(title):
 
 DOWNLOADS = "@UTIL_DB.PUBLIC.BADGE1_DOWNLOADS"
 # Workspace layout (matches the badge_1 workspace as reorganized in Snowsight)
-SETUP_NB, DORA_NB = "dora/dora_setup", "dora/dora_tests"
+SETUP_NB, DORA_SETUP_NB, DORA_NB = "dora/account_setup", "dora/dora_setup", "dora/dora_tests"
 
 
 def put(name, files, target):
@@ -112,7 +127,12 @@ def put(name, files, target):
 PREAMBLE_VARS = f"""# Isolation mapping (set once per notebook; SQL cells use these via {{{{...}}}})
 ADMIN_ROLE    = "{ADMIN_ROLE}"   # stands in for the course's ACCOUNTADMIN
 SYSADMIN_ROLE = "{SYSADMIN_ROLE}"    # stands in for the course's SYSADMIN
-WAREHOUSE     = "{WAREHOUSE}"      # stands in for the course's COMPUTE_WH"""
+WAREHOUSE     = "{WAREHOUSE}"      # stands in for the course's COMPUTE_WH
+
+
+def pdf(result):
+    \"\"\"A SQL cell's result as pandas (runtime 2.6+ returns a Snowpark DataFrame).\"\"\"
+    return result.to_pandas() if hasattr(result, "to_pandas") else result"""
 
 
 def preamble(title, purpose):
@@ -195,7 +215,7 @@ grant read on stage {DOWNLOADS[1:]} to role {{{{SYSADMIN_ROLE}}}};
 alter stage {DOWNLOADS[1:]} refresh;
 list {DOWNLOADS};"""),
     py("downloads_check", f"""expected = {sorted(DATA_FILES)!r}
-found = sorted(n.split('/')[-1] for n in create_downloads_stage['name'])
+found = sorted(n.split('/')[-1] for n in pdf(create_downloads_stage)['name'])
 print('Missing course files:', sorted(set(expected) - set(found)) or 'none')"""),
     md("## Keep each role's view isolated\n"
        "With secondary roles on, Snowsight shows the combined privileges of all your roles. Each lesson notebook runs "
@@ -223,7 +243,7 @@ NB["lesson_01_getting_started"] = preamble("Lesson 1: Getting Started", "Lesson 
     page("🧭 Set Up Your Trial Account"),
     course("Sign up for a Snowflake Trial Account on AWS … If you choose not to use the link above, be sure to choose ENTERPRISE, AWS, US West (Oregon)."),
     sql("account_details", "select current_organization_name() as org, current_account_name() as account, current_account() as locator,\n       current_region() as region, current_user() as user_name, current_version() as version;"),
-    py("trial_requirement_check", """region = account_details["REGION"][0]
+    py("trial_requirement_check", """region = pdf(account_details)["REGION"][0]
 print("Region:", region)
 print("Matches course requirement (AWS US West Oregon):", region.upper().endswith("AWS_US_WEST_2"))
 print("Edition must be ENTERPRISE; check Admin > Accounts in Snowsight (not exposed to SQL without ORGADMIN).")"""),
@@ -266,7 +286,7 @@ NB["lesson_02_identity_and_access"] = preamble("Lesson 2: Identity & Access", "D
     page("🏁 Summary & Next Steps"),
     course("Are you ready for Lesson 3? Can see the COMPUTE_WH warehouse while in the SYSADMIN role · Can see your DEMO_DB database when SYSADMIN · Can see your UTIL_DB database when SYSADMIN."),
     sql("ready_check", "use role {{SYSADMIN_ROLE}};\nshow databases;"),
-    py("ready_check_eval", """names = set(ready_check["name"])
+    py("ready_check_eval", """names = set(pdf(ready_check)["name"])
 for db in ["DEMO_DB", "UTIL_DB"]:
     print(f"{db} visible to SYSADMIN stand-in:", db in names)"""),
     note(f"This checklist expects **UTIL_DB**, which the course has not told the learner to create (see `{SETUP_NB}`)."),
@@ -307,9 +327,9 @@ create schema GARDEN_PLANTS.FLOWERS;"""),
     sql("dbs_as_sysadmin", "use role {{SYSADMIN_ROLE}};\nshow databases;"),
     sql("garden_schemas_check", "show schemas in database GARDEN_PLANTS;"),
     py("challenge_check", """course_dbs = {"DEMO_DB", "GARDEN_PLANTS", "UTIL_DB"}
-missing = course_dbs & set(dbs_as_admin["name"]) - set(dbs_as_sysadmin["name"])
+missing = course_dbs & set(pdf(dbs_as_admin)["name"]) - set(pdf(dbs_as_sysadmin)["name"])
 print("Course databases ADMIN sees but SYSADMIN does not:", missing or "none")
-print("PUBLIC schema still in GARDEN_PLANTS:", "PUBLIC" in set(garden_schemas_check["name"]))"""),
+print("PUBLIC schema still in GARDEN_PLANTS:", "PUBLIC" in set(pdf(garden_schemas_check)["name"]))"""),
 ]
 
 NB["lesson_04_tables_data_types_loading"] = preamble("Lesson 4: Tables, Data Types, and Loading Data", "ROOT_DEPTH table, INSERT, SELECT * with LIMIT, and the challenge rows.") + [
@@ -342,9 +362,9 @@ NB["lesson_04_tables_data_types_loading"] = preamble("Lesson 4: Tables, Data Typ
     sql("ready_dbs", "use role {{SYSADMIN_ROLE}};\nshow databases;"),
     sql("ready_schemas", "show schemas in database GARDEN_PLANTS;"),
     sql("ready_rows", "select count(*) as root_depth_rows from GARDEN_PLANTS.VEGGIES.ROOT_DEPTH;"),
-    py("ready_eval", """print("Databases visible to SYSADMIN stand-in:", sorted(ready_dbs["name"]))
-print("GARDEN_PLANTS schema count:", len(ready_schemas), "(course expects 4)")
-print("ROOT_DEPTH rows:", int(ready_rows["ROOT_DEPTH_ROWS"][0]), "(course expects 3)")"""),
+    py("ready_eval", """print("Databases visible to SYSADMIN stand-in:", sorted(pdf(ready_dbs)["name"]))
+print("GARDEN_PLANTS schema count:", len(pdf(ready_schemas)), "(course expects 4)")
+print("ROOT_DEPTH rows:", int(pdf(ready_rows)["ROOT_DEPTH_ROWS"][0]), "(course expects 3)")"""),
     note("The checklist expects 5 databases, but the course's own screenshot DWW_043 shows 4 (DEMO_DB, GARDEN_PLANTS, SNOWFLAKE, SNOWFLAKE_LEARNING_DB), and UTIL_DB was never created by the learner. The count depends on trial-provisioned databases."),
 ]
 
@@ -379,10 +399,10 @@ show resource monitors like 'daily_3_credit_limit';"""),
     md("Knowledge check only."),
 ]
 
-NB["lesson_06_meet_dora"] = preamble("Lesson 6: Meet DORA!", f"DORA setup and checks DWW01–05 are in `{DORA_NB}.ipynb`. This notebook runs the non-DORA metadata queries.") + [
+NB["lesson_06_meet_dora"] = preamble("Lesson 6: Meet DORA!", f"DORA setup is in `{DORA_SETUP_NB}.ipynb`; checks DWW01–05 are in `{DORA_NB}.ipynb`. This notebook runs the non-DORA metadata queries.") + [
     page("🎭 Meet DORA!"),
     md("### 🤖 DORA setup goes here\nThe course has the learner (as ACCOUNTADMIN) create the `dora_api_integration` API integration, the "
-       "`util_db.public.grader` external function, and run the `DORA_IS_WORKING` test. " f"All three are in `{DORA_NB}.ipynb` → **Setup**."),
+       "`util_db.public.grader` external function, and run the `DORA_IS_WORKING` test. " f"All three are in `{DORA_SETUP_NB}.ipynb`."),
     page("🥋 Preparing for Code Checks"),
     course("Using Code to Check Your Work: you were asked to set up 3 schemas in a GARDEN_PLANTS database and delete a schema. Run some code to see if you did those tasks."),
     sql("schemata_all", isolate(code("Preparing for Code Checks", 0))),
@@ -424,7 +444,7 @@ files = ('veggie_details_k_to_z_pipe.csv')
 file_format = (type = 'CSV' field_delimiter = '|' skip_header = 1 field_optionally_enclosed_by = '"');"""),
     course("Check your table by running a select statement. You should see 42 rows. If you reverse the sort order, you should see Zucchini at the top."),
     sql("check_42_rows", "select * from GARDEN_PLANTS.VEGGIES.VEGETABLE_DETAILS order by plant_name desc;"),
-    py("check_42_eval", "print('Rows:', len(check_42_rows), '(course expects 42)'); print('Top row:', check_42_rows['PLANT_NAME'][0])"),
+    py("check_42_eval", "rows = pdf(check_42_rows)\nprint('Rows:', len(rows), '(course expects 42)'); print('Top row:', rows['PLANT_NAME'][0])"),
     md("The course's reset statement, if a file was loaded twice (not run):\n\n```sql\nTRUNCATE TABLE GARDEN_PLANTS.VEGGIES.VEGETABLE_DETAILS;\n```"),
     dora("DWW06", "VEGETABLE_DETAILS Table"),
     page("🎯 Viewing Our Table Data"),
@@ -627,7 +647,13 @@ NB["lesson_10_data_storage_structures"] = preamble("Lesson 10: Data Storage Stru
     sql("double_it_up", "SELECT SEQ_AUTHOR_UID.nextval, SEQ_AUTHOR_UID.nextval;\n"),
     sql("show_sequence_after", "show sequences;"),
     page("🥋 Reset the Sequence & Add Rows to the Author Table"),
-    sql("reset_sequence_add_authors", isolate(code("Reset the Sequence"))),
+    # Split at the course block's own statement boundary: the notebook SQL runner does not treat `//` as a
+    # comment, so the apostrophe in "we'll" merges both statements (fails with "statement count 2 ... 1").
+    sql("reset_sequence", isolate(code("Reset the Sequence")).split("\n\n//Add the remaining")[0]),
+    sql("add_authors", "//Add the remaining" + isolate(code("Reset the Sequence")).split("\n\n//Add the remaining")[1]),
+    note("The course's code block for this step is split into two cells unchanged: Workspace notebooks do not treat "
+         "`//` as a comment, so the apostrophe in the comment *then we'll add…* makes the block fail when run as one cell. "
+         "The same block runs fine in a Snowsight worksheet."),
     page("🎭 Data Storage: Mapping the Many-to-Many"),
     md("Video and knowledge checks only."),
     page("🥋 Create the Book_To_AUTHOR Table"),
@@ -677,7 +703,10 @@ NB["lesson_12_nested_semi_structured"] = preamble("Lesson 12: Nested Semi-Struct
     sql("tweets_infrastructure", "-- Derived solution\nuse role {{SYSADMIN_ROLE}};\ncreate database SOCIAL_MEDIA_FLOODGATES;\ncreate table social_media_floodgates.public.tweet_ingest (raw_status variant);\ncreate file format social_media_floodgates.public.json_file_format\n    type = 'JSON'\n    strip_outer_array = TRUE;"),
     put("put_tweets", ["nutrition_tweets.json"], "@util_db.public.my_internal_stage"),
     sql("copy_tweets", "-- Derived solution\nuse role {{ADMIN_ROLE}};\ncopy into social_media_floodgates.public.tweet_ingest\nfrom @util_db.public.my_internal_stage\nfiles = ('nutrition_tweets.json')\nfile_format = (format_name = social_media_floodgates.public.json_file_format);"),
-    sql("query_tweets", "use schema social_media_floodgates.public;\n" + code("Load and Query Nested TWEET JSON Data")),
+    sql("query_tweets_1", "use schema social_media_floodgates.public;\n" + split_statements(code("Load and Query Nested TWEET JSON Data"))[0]),
+    *[sql(f"query_tweets_{i}", s) for i, s in enumerate(split_statements(code("Load and Query Nested TWEET JSON Data"))[1:], 2)],
+    note("The course's code block is split into one cell per statement, text unchanged. Workspace notebooks do not treat `//` as a comment, "
+         "so the apostrophes in *doesn't* and *tweet's* merge statements and the block fails when run as one cell."),
     page("🥋 Flatten & Isolate Entities"),
     sql("flatten_urls", code("Flatten & Isolate Entities", 0)),
     sql("flatten_hashtags", code("Flatten & Isolate Entities", 1)),
@@ -687,7 +716,7 @@ NB["lesson_12_nested_semi_structured"] = preamble("Lesson 12: Nested Semi-Struct
     course("🎯 Create a view called HASHTAGS_NORMALIZED. The results of SELECT * on your view should look like DWW_172 (USER_NAME, TWEET_ID, HASHTAG_USED; 14 rows)."),
     sql("create_hashtags_normalized", "-- Derived solution, modeled on URLS_NORMALIZED and the hashtag flatten query\ncreate or replace view social_media_floodgates.public.hashtags_normalized as\n(select raw_status:user:name::text as user_name\n,raw_status:id as tweet_id\n,value:text::varchar as hashtag_used\nfrom tweet_ingest\n,lateral flatten\n(input => raw_status:entities:hashtags)\n);"),
     sql("check_hashtags", "select * from social_media_floodgates.public.hashtags_normalized;"),
-    py("check_hashtags_eval", "print('Rows:', len(check_hashtags), '(DWW_172 shows 14)')"),
+    py("check_hashtags_eval", "print('Rows:', len(pdf(check_hashtags)), '(DWW_172 shows 14)')"),
     dora("DWW19", "HASHTAGS_NORMALIZED view exists"),
     page("🎉 Badge Time!"),
     course("Check in with DORA in the YSA app: all DORA tests DWW01–DWW19 should be PASSING and VALID. Outside Snowflake; nothing to run."),
@@ -697,21 +726,24 @@ NB["lesson_12_nested_semi_structured"] = preamble("Lesson 12: Nested Semi-Struct
 DORA_PAGES = [("DWW01", 6), ("DWW02", 6), ("DWW03", 6), ("DWW04", 6), ("DWW05", 6), ("DWW06", 7), ("DWW07", 7),
               ("DWW08", 8), ("DWW09", 8), ("DWW10", 9), ("DWW11", 9), ("DWW12", 9), ("DWW13", 9), ("DWW14", 9),
               ("DWW15", 10), ("DWW16", 11), ("DWW17", 12), ("DWW18", 12), ("DWW19", 12)]
-dora_cells = [
-    md("# Badge 1: DORA checks\n\n"
+dora_intro = ("# Badge 1: DORA checks\n\n"
        "Every DORA step from the course, in order. Each check has two cells:\n\n"
        "1. **Local check**: the course's check query with the external `GRADER` call removed. It runs entirely in this account and sends nothing.\n"
        "2. **DORA (exact course code)**: verbatim and unedited, as the course requires (DORA audits a hash of the code).\n\n"
        "⚠️ **Running a DORA cell, or the Setup cells, sends data outside this account.** The GRADER is an external function that calls "
        "Snowflake Education's grading service (`https://awy6hshxy4.execute-api.us-west-2.amazonaws.com/dev/edu_dora`) with the step "
        "result plus `current_account`, `current_account_name`, `current_statement` and a timestamp. Run only the local checks unless you intend to submit.\n\n"
-       "DORA code uses the real `ACCOUNTADMIN`, as the course specifies. Each local check names the lesson notebook it follows."),
+       "DORA code uses the real `ACCOUNTADMIN`, as the course specifies. Each local check names the lesson notebook it follows.")
+# Split as in the badge_1 workspace: DORA setup (Lesson 6) and the DORA checks are separate notebooks
+NB[DORA_SETUP_NB] = [
+    md(dora_intro),
     md("## Setup (course Lesson 6, 🎭 Meet DORA!)\nThe course: *You don't have to understand what it means to “create an API Integration,” you just need to run the code below (using the ACCOUNTADMIN ROLE!).*"),
     sql("dora_api_integration", code("Meet DORA!", 0)),
     sql("dora_grader_function", code("Meet DORA!", 1)),
     md("### Is the GRADER Function working?"),
     sql("dora_is_working", code("Meet DORA!", 2)),
 ]
+dora_cells = [md(dora_intro)]
 for step, lesson in DORA_PAGES:
     c = code(f"DORA {step}")
     dora_cells += [
