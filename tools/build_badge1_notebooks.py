@@ -1,7 +1,8 @@
 """Build Badge 1 (Data Warehousing Workshop) lesson notebooks for Snowflake Workspaces.
 
 Usage: python3 build_badge1_notebooks.py
-Output: ../notebooks/badge1_dww/  (12 lesson notebooks, a setup notebook, a DORA notebook, data/)
+Output: ../notebooks/badge1_dww/  (12 lesson notebooks, a setup notebook, a DORA notebook,
+        the learner's Lesson 8 "Uncle Yers Root Depth Notebook", data/)
 
 Course code is read verbatim from the Rise export. In lesson notebooks only role and
 warehouse names are swapped for isolation variables:
@@ -87,7 +88,7 @@ def note(text):
 def dora(step, what):
     return md(f"### 🤖 DORA check {step} goes here\n"
               f"The course has the learner run **{step}** ({what}) at this point.\n"
-              f"It is in `badge1_dora_checks.ipynb`, section **{step}**, as a local check plus the exact DORA code.")
+              f"It is in `{DORA_NB}.ipynb`, section **{step}**, as a local check plus the exact DORA code.")
 
 
 def page(title):
@@ -95,6 +96,8 @@ def page(title):
 
 
 DOWNLOADS = "@UTIL_DB.PUBLIC.BADGE1_DOWNLOADS"
+# Workspace layout (matches the badge_1 workspace as reorganized in Snowsight)
+SETUP_NB, DORA_NB = "dora/dora_setup", "dora/dora_tests"
 
 
 def put(name, files, target):
@@ -121,9 +124,9 @@ def preamble(title, purpose):
            "- Code cells run that task. Course code is verbatim except role/warehouse names, which are swapped for "
            f"`{ADMIN_ROLE}` (ACCOUNTADMIN), `{SYSADMIN_ROLE}` (SYSADMIN) and `{WAREHOUSE}` (COMPUTE_WH).\n"
            "- Cells marked **SQL equivalent** replace a UI-only step; **Derived solution** marks challenge-lab answers the course does not give.\n"
-           "- DORA checks are not run here; see `badge1_dora_checks.ipynb`.\n"
+           f"- DORA checks are not run here; see `{DORA_NB}.ipynb`.\n"
            f"- Files the course has learners download are on the `{DOWNLOADS}` stage, which stands in for the learner's Downloads folder.\n\n"
-           "Prerequisite: run `00_badge1_setup.ipynb` once."),
+           f"Prerequisite: run `{SETUP_NB}.ipynb` once."),
         py("isolation_vars", PREAMBLE_VARS),
         sql("session_context", "use role {{ADMIN_ROLE}};\nuse secondary roles none;\nuse warehouse {{WAREHOUSE}};\nselect current_role(), current_warehouse();"),
     ]
@@ -132,7 +135,7 @@ def preamble(title, purpose):
 # ---------------------------------------------------------------- notebooks
 NB = {}
 
-NB["00_badge1_setup"] = [
+NB[SETUP_NB] = [
     md(f"# Badge 1: Setup (run once, as ACCOUNTADMIN)\n\n"
        "Creates the isolated environment the lesson notebooks run in:\n\n"
        "| Course object | Isolated stand-in | Notes |\n|---|---|---|\n"
@@ -266,7 +269,7 @@ NB["lesson_02_identity_and_access"] = preamble("Lesson 2: Identity & Access", "D
     py("ready_check_eval", """names = set(ready_check["name"])
 for db in ["DEMO_DB", "UTIL_DB"]:
     print(f"{db} visible to SYSADMIN stand-in:", db in names)"""),
-    note("This checklist expects **UTIL_DB**, which the course has not told the learner to create (see `00_badge1_setup`)."),
+    note(f"This checklist expects **UTIL_DB**, which the course has not told the learner to create (see `{SETUP_NB}`)."),
 ]
 
 NB["lesson_03_data_containers"] = preamble("Lesson 3: Data Containers", "GARDEN_PLANTS and its schemas, files and context, and SHOW commands.") + [
@@ -376,10 +379,10 @@ show resource monitors like 'daily_3_credit_limit';"""),
     md("Knowledge check only."),
 ]
 
-NB["lesson_06_meet_dora"] = preamble("Lesson 6: Meet DORA!", "DORA setup and checks DWW01–05 are in `badge1_dora_checks.ipynb`. This notebook runs the non-DORA metadata queries.") + [
+NB["lesson_06_meet_dora"] = preamble("Lesson 6: Meet DORA!", f"DORA setup and checks DWW01–05 are in `{DORA_NB}.ipynb`. This notebook runs the non-DORA metadata queries.") + [
     page("🎭 Meet DORA!"),
     md("### 🤖 DORA setup goes here\nThe course has the learner (as ACCOUNTADMIN) create the `dora_api_integration` API integration, the "
-       "`util_db.public.grader` external function, and run the `DORA_IS_WORKING` test. All three are in `badge1_dora_checks.ipynb` → **Setup**."),
+       "`util_db.public.grader` external function, and run the `DORA_IS_WORKING` test. " f"All three are in `{DORA_NB}.ipynb` → **Setup**."),
     page("🥋 Preparing for Code Checks"),
     course("Using Code to Check Your Work: you were asked to set up 3 schemas in a GARDEN_PLANTS database and delete a schema. Run some code to see if you did those tasks."),
     sql("schemata_all", isolate(code("Preparing for Code Checks", 0))),
@@ -434,6 +437,10 @@ file_format = (type = 'CSV' field_delimiter = '|' skip_header = 1 field_optional
     dora("DWW07", "VEG_DETAILS row count, expects 41"),
 ]
 
+LEARNER_NB = "Uncle Yers Root Depth Notebook"   # DWW_103
+APP_TITLE = "Uncle Yers Root Depth Entry Form"    # DWW_126
+APP_NAME = f'garden_plants.fruits."{APP_TITLE}"'
+APP_FILE = f'snow://streamlit/GARDEN_PLANTS.FRUITS."{APP_TITLE}"/versions/live/streamlit_app.py'
 NOTEBOOK_TITLE_CELL = "# Add Rows to Flower Detail Table\n\nEdit the \"set\" cells to update the variables, then click \"Run All\" in the top left-corner."
 APP_CODE = '''# Import python packages
 import streamlit as st
@@ -470,29 +477,30 @@ NB["lesson_08_notebooks_and_forms"] = preamble("Lesson 8: Notebooks & Forms", "F
     note("DWW_100 creates FLOWER_DETAILS as ACCOUNTADMIN, contrary to the course's rule that SYSADMIN should own everything."),
     page("🥋 Create a Snowflake Notebook"),
     course("UI steps (DWW_103): Projects → Workspaces → + Add new → **Notebook** named **Uncle Yers Root Depth Notebook** → Connect → Create new service **NOTEBOOK_SERVICE** → Create and connect. Add a Markdown cell."),
-    md("The cells below, from `Title_Cell` to `check_the_table`, reproduce the learner's *Uncle Yers Root Depth Notebook* "
-       "with the course's cell names, in the final order shown in DWW_114."),
-    note("DORA check DWW08 looks in SNOWFLAKE.ACCOUNT_USAGE.ACCESS_HISTORY for an object matching '%Uncle Yer%'. Running these cells inside a lesson notebook may not satisfy it; the learner's notebook must be named as the course says. Whether a Workspace notebook's name appears in ACCESS_HISTORY could not be verified."),
-    md(NOTEBOOK_TITLE_CELL),
+    md(f"The learner's notebook is the separate file **`{LEARNER_NB}.ipynb`** in this workspace. It is shipped in the course's final state: "
+       "the six cells named and ordered as in DWW_114, with the contents from DWW_116, DWW_117, DWW_120 and DWW_121. "
+       "Do the steps below **in that notebook**, as the course describes. This lesson notebook has no copies of its cells.\n\n"
+       f"Isolation: in that notebook's header, choose role **`{ADMIN_ROLE}`** (for the course's ACCOUNTADMIN) and warehouse **`{WAREHOUSE}`** (for COMPUTE_WH). "
+       "Its cells contain only the course's code."),
+    note("DORA check DWW08 looks in SNOWFLAKE.ACCOUNT_USAGE.ACCESS_HISTORY for an object matching '%Uncle Yer%'. Whether a Workspace notebook's name appears there could not be verified."),
     page("🥋 Add Cells to the Notebook"),
-    course("Add a SQL cell, name it **insert_row**, paste the insert statement, and run the cell (DWW_111)."),
-    sql("insert_row_petunia", "-- The course's first version of the insert_row cell\nuse role {{ADMIN_ROLE}};\n" + code("Add Cells to the Notebook")),
-    course("🎯 Create another SQL cell, name it **check_the_table**, write a SELECT * on the flower_details table, run it."),
-    sql("check_the_table_first", "-- Derived solution\nselect * from garden_plants.flowers.flower_details;"),
+    course("Add a SQL cell, name it **insert_row**, paste the insert statement, and run the cell (DWW_111):\n\n```sql\n" + code("Add Cells to the Notebook") + "\n```\n\n"
+           "🎯 Create another SQL cell, name it **check_the_table**, write a SELECT * statement on the flower_details table, and run the cell."),
+    md("**In the learner's notebook:** the shipped `insert_row` cell already holds its final version (`select $fn, $rdc;`). "
+       "To do this step as written, put the Petunia statement above into `insert_row`, run it, then run `check_the_table`."),
     page("🥋 Use Variables in the Notebook"),
-    course("🎯 Create 3 more SQL cells named set_flower_name, set_root_depth_code and check_my_variables, and reorder them as shown (DWW_114). Fill in the new SQL cells and run them."),
-    sql("set_root_depth_code", code("Use Variables in the Notebook").split("\n")[0]),
-    sql("set_flower_name", code("Use Variables in the Notebook").split("\n")[1]),
-    sql("check_my_variables", code("Use Variables in the Notebook").split("\n")[2]),
-    course("Replace the flower name & root depth code with the variables (DWW_117), then run the last cell to check your insert."),
-    sql("insert_row", "-- insert_row after the DWW_117 edit\ninsert into garden_plants.flowers.flower_details\nselect $fn, $rdc;"),
-    sql("check_the_table", "select * from garden_plants.flowers.flower_details;"),
+    course("🎯 Create 3 more SQL cells named set_flower_name, set_root_depth_code and check_my_variables, and rearrange them into the order shown (DWW_114). Fill in the new SQL cells and run them:\n\n```sql\n"
+           + code("Use Variables in the Notebook") + "\n```\n\n"
+           "Replace the flower name & root depth code in `insert_row` with the variables (DWW_117), run it, then run the last cell to check your insert (DWW_118)."),
+    md("**In the learner's notebook:** run `set_root_depth_code`, `set_flower_name`, `check_my_variables`, `insert_row` and `check_the_table` (or **Run All**). This inserts Lilac / S."),
     page("🥋 Put Finishing Touches on Your Notebook"),
-    course("Edit your Markdown cell (DWW_120). 🎯 Use your notebook to create 3 additional rows: a Sunflower should have deep roots; Lavender can have shallow roots; a Tulip … medium root depth."),
-    sql("add_sunflower", "-- Derived solution: edit the set cells and Run All, once per flower\nset rdc = 'D';\nset fn = 'Sunflower';\ninsert into garden_plants.flowers.flower_details\nselect $fn, $rdc;"),
-    sql("add_lavender", "set rdc = 'S';\nset fn = 'Lavender';\ninsert into garden_plants.flowers.flower_details\nselect $fn, $rdc;"),
-    sql("add_tulip", "set rdc = 'M';\nset fn = 'Tulip';\ninsert into garden_plants.flowers.flower_details\nselect $fn, $rdc;"),
-    sql("check_flowers", "-- Run the last cell to check your inserted rows (DWW_121, DWW_122)\nselect * from garden_plants.flowers.flower_details;"),
+    course("Edit your Markdown cell (DWW_120). 🎯 Use your notebook to create 3 additional rows in the Flower Detail table: A Sunflower should have deep roots. Lavender can have shallow roots. "
+           "A Tulip has a bulb, not roots, but we'll say they need medium root depth. Run the last cell to check your inserted rows (DWW_121 shows Petunia M, Lilac S, Sunflower D, Lavender S, Tulip M)."),
+    md("**In the learner's notebook:** `Title_Cell` already has the DWW_120 text. For each flower, edit the two set cells and click **Run All**:\n\n"
+       "| Run | `set_root_depth_code` | `set_flower_name` |\n|---|---|---|\n"
+       "| 1 | `set rdc = 'D';` | `set fn = 'Sunflower';` |\n| 2 | `set rdc = 'S';` | `set fn = 'Lavender';` |\n| 3 | `set rdc = 'M';` | `set fn = 'Tulip';` |\n\n"
+       "The D/S/M codes are derived from the course text. Then run the check below."),
+    sql("check_flower_rows", "-- Confirms the learner's notebook runs (DWW_121); not a course cell\nselect * from garden_plants.flowers.flower_details;"),
     dora("DWW08", "Notebook success!"),
     page("🥋 Create a SiS Form"),
     course("🎯 Create a Fruit Details Table: model it after the other 2 details tables (DWW_124 shows FRUIT_DETAILS in GARDEN_PLANTS.FRUITS)."),
@@ -501,23 +509,25 @@ NB["lesson_08_notebooks_and_forms"] = preamble("Lesson 8: Notebooks & Forms", "F
            "Then (DWW_128–142) delete the sample code from line 18 down, edit the title and instruction line, add the input fields, capture them in `fn` and `rdc`, add a Submit button, build `sql_insert` with escaped quotes, comment out the write lines, and run the SQL."),
     md("The course's code snippets, in order:\n\n```python\n" + code("Enable the SiS Form") + "\n```\n```python\n" + code("Capturing Form Entries") + "\n```\n```python\n" + code("Prepare an Insert Statement") + "\n```"),
     note("The app builds SQL by concatenating user input (`'insert … select \\''+fn+'\\',\\''+rdc+'\\''`), a SQL-injection pattern. A fruit name containing an apostrophe (e.g. *Dragon's Eye*) breaks the insert. Consider teaching parameter binding."),
-    py("create_streamlit_app", f'''# SQL equivalent of the Streamlit wizard: the course's final app code (DWW_142, with the DWW_139 escape fix)
-# is written to a stage and the app is created from it.
+    sql("create_streamlit_app", f"""-- SQL equivalent of the Create Streamlit App dialog (DWW_126): Create on warehouse (legacy),
+-- App title, App location GARDEN_PLANTS / FRUITS, App warehouse. Like the dialog, this starts the app from Snowflake's sample code.
+use role {{{{ADMIN_ROLE}}}};
+create streamlit {APP_NAME}
+  runtime_name = 'SYSTEM$WAREHOUSE_RUNTIME'
+  query_warehouse = {{{{WAREHOUSE}}}}
+  title = '{APP_TITLE}';
+alter streamlit {APP_NAME} add live version from last;"""),
+    note(f"Snowsight assigns the app's object identifier itself; the course shows only the title. Here the identifier is the title, `{APP_NAME}`."),
+    py("edit_streamlit_app_code", f'''# SQL equivalent of the code edits in the Streamlit editor (DWW_128 to DWW_142): the course's final app code,
+# with the DWW_139 escape fix, is written into the app's live version.
 import io
 from snowflake.snowpark.context import get_active_session
 session = get_active_session()
-session.sql(f"use role {{ADMIN_ROLE}}").collect()
 APP_CODE = {APP_CODE!r}
-session.sql("create stage if not exists garden_plants.fruits.uncle_yers_app_stage").collect()
-session.file.put_stream(io.BytesIO(APP_CODE.encode()), "@garden_plants.fruits.uncle_yers_app_stage/streamlit_app.py",
+session.file.put_stream(io.BytesIO(APP_CODE.encode()),
+                        {APP_FILE!r},
                         auto_compress=False, overwrite=True)
-session.sql(f"""create or replace streamlit garden_plants.fruits.uncle_yers_root_depth_entry_form
-  from '@garden_plants.fruits.uncle_yers_app_stage'
-  main_file = 'streamlit_app.py'
-  query_warehouse = {{WAREHOUSE}}
-  title = 'Uncle Yers Root Depth Entry Form'""").collect()
 print(APP_CODE)'''),
-    note("Additions not in the course: the stage `GARDEN_PLANTS.FRUITS.UNCLE_YERS_APP_STAGE` holds the app file, and the app object name is chosen here (the UI generates one)."),
     page("🥋 Writing Our Entries to the Database"),
     course("🎯 Check your FRUIT_DETAILS table to see if you added a row. Once you have confirmed that your app works, add two more rows (for a total of 3). You can use any fruit names with any root depth settings."),
     py("simulate_submits", '''# A notebook cannot click the app's Submit button. This runs the exact statement the app builds,
@@ -530,6 +540,20 @@ for fn, rdc in [("Apricot", "S"), ("Blueberry", "S"), ("Cherry", "M")]:
     sql("check_fruits", "select * from garden_plants.fruits.fruit_details;"),
     md("**Manual step:** DORA check DWW09 looks in QUERY_HISTORY for `execute streamlit \"GARDEN_PLANTS\".\"FRUITS\".%`, which only appears when the app is opened in Snowsight. Open *Uncle Yers Root Depth Entry Form* under Projects → Streamlit once before running DWW09."),
     dora("DWW09", "SiS App Works"),
+]
+
+# The learner's own notebook (DWW_103), in the course's final state: cell names and order from DWW_114,
+# contents from DWW_116 (set cells), DWW_117 (insert_row), DWW_120 (Title_Cell) and DWW_121 (check_the_table).
+_title_cell = md(NOTEBOOK_TITLE_CELL)
+_title_cell["metadata"] = {"name": "Title_Cell"}
+_set_code = code("Use Variables in the Notebook").split("\n")
+NB[LEARNER_NB] = [
+    _title_cell,
+    sql("set_root_depth_code", _set_code[0]),
+    sql("set_flower_name", _set_code[1]),
+    sql("check_my_variables", _set_code[2]),
+    sql("insert_row", "insert into garden_plants.flowers.flower_details\nselect $fn, $rdc;"),
+    sql("check_the_table", "select *\nfrom garden_plants.flowers.flower_details;"),
 ]
 
 NB["lesson_09_staging_data"] = preamble("Lesson 9: Staging Data", "MY_INTERNAL_STAGE, file formats, COPY INTO, and the two challenge loads.") + [
@@ -695,15 +719,18 @@ for step, lesson in DORA_PAGES:
         sql(f"{step.lower()}_local", "use role accountadmin;\n-- Local check: same query without the GRADER call\n" + dora_local(c)),
         sql(f"{step.lower()}_dora", c),
     ]
-NB["badge1_dora_checks"] = dora_cells
+NB[DORA_NB] = dora_cells
 
 # ---------------------------------------------------------------- write
 META = {"jupytext": {"main_language": "sql"},
         "kernelspec": {"display_name": "Streamlit Notebook", "name": "streamlit"}}
 
-if os.path.isdir(OUT):
-    shutil.rmtree(OUT)
-os.makedirs(os.path.join(OUT, "data"))
+# Replace only generated files: OUT is also a Git working copy (.git must survive a rebuild)
+for sub in ("data", "dora"):
+    os.makedirs(os.path.join(OUT, sub), exist_ok=True)
+for sub in ("", "dora"):
+    for old in [f for f in os.listdir(os.path.join(OUT, sub)) if f.endswith(".ipynb")]:
+        os.remove(os.path.join(OUT, sub, old))
 for f in DATA_FILES:
     shutil.copy(os.path.join(COURSE, "assets", f), os.path.join(OUT, "data", f))
 for name, cells in NB.items():
